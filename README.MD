@@ -104,9 +104,9 @@ For production use of your Zynq based project it's more preferable to run Linux 
 Download and unpack most recent Buildroot version:
 
 ```
-$ wget https://buildroot.org/downloads/buildroot-2021.02.tar.gz
-$ tar -xpvf buildroot-2021.02.tar.gz
-$ cd ~/buildroot-2021.02
+$ wget https://buildroot.org/downloads/buildroot-2025.02.tar.gz
+$ tar -xpvf buildroot-2025.02.tar.gz
+$ cd ~/buildroot-2025.02
 ```
 
 Initialize build environment using [standard profile for ZC706 development board](https://github.com/buildroot/buildroot/blob/master/configs/zynq_zc706_defconfig):
@@ -119,13 +119,13 @@ $ echo “BR2_PACKAGE_ZC_DMA_MEM=y” >> .config
 Configure Linux kernel, make sure that `CONFIG_GPIO_XILINX` and `CONFIG_UIO` options required for this project are enabled:
 
 ```
-$ make linux-menuconfig
+$ make BR2_EXTERNAL="path/to/zc_pcie_dma/kernel/zc_dma_mem" linux-menuconfig
 ```
 
 Compile kernel, bootloder and `zc_dma_mem.ko` kernel module:
 
 ```
-$ make BR2_EXTERNAL="path/to/zc_pcie_dma/kernel/zc_dma_mem" all
+$ make all
 ```
 
 After completing this step you will have the following files required for our system:
