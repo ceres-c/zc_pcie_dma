@@ -135,7 +135,7 @@ After completing this step you will have the following files required for our sy
  * `output/images/uImage` &minus; Linux kernel image.
  * `output/target/lib/modules` &minus; Loadable kernel modules along with `zc_dma_mem.ko`.
 
-To prepare root file system with Ubuntu 20.04 we will use [debootstrap and QEMU userspace emulation](https://wiki.ubuntu.com/ARM/RootfsFromScratch/QemuDebootstrap):
+To prepare root file system with Ubuntu 20.04 we will use [debootstrap and QEMU userspace emulation](https://wiki.ubuntu.com/ARM/RootfsFromScratch/QemuDebootstrap). Please not you can **not** do this inside a container:
 
 ```
 $ sudo apt install qemu-user-static qemu-user-binfmt
@@ -165,6 +165,11 @@ Prepare chroot environment to run second stage of debootstrap:
 ```
 $ sudo cp /usr/bin/qemu-arm-static debootstrap_focal_armhf/usr/bin
 $ sudo chroot debootstrap_focal_armhf /bin/bash
+```
+
+If you see something like `I have no name!@<host hostname>` in your terminal after debootstrapping, then fix it with
+```
+ls /etc/group /etc/passwd
 ```
 
 Run second stage:
