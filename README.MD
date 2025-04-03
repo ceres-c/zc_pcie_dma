@@ -316,7 +316,8 @@ $ sudo mount /dev/sdc1 /mnt/tmp
 $ sudo cp ~/buildroot-2021.02/output/images/boot.bin /mnt/tmp
 $ sudo cp ~/buildroot-2021.02/output/images/u-boot.img /mnt/tmp
 $ sudo cp ~/buildroot-2021.02/output/images/uImage /mnt/tmp
-$ sudo cp ~/zc_pcie_dma/uEnv.txt /mnt/tmp
+$ sudo mkdir /mnt/tmp/extlinux
+$ sudo cp extlinux.conf /mnt/tmp/extlinux
 $ sudo cp ~/zc_pcie_dma/devicetree.dtb /mnt/tmp
 $ sudo cp ~/zc_pcie_dma/zc_pcie_dma.bit /mnt/tmp
 $ sudo umount /mnt/tmp
@@ -343,6 +344,15 @@ Now you can connect USB cable to the serial console of ZC706, insert prepared SD
 $ sudo pip install pyserial
 $ sudo miniterm.py --eol LF --raw /dev/ttyUSB0 115200
 ```
+
+Stop U-Boot boot process when it asks you so, and type
+```"
+setenv load_fpga "fatload mmc 0 0x4000000 zc_pcie_dma.bit && fpga loadb 0 0x4000000 13321511"
+setenv bootcmd "run load_fpga; run distro_bootcmd"
+saveenv
+run load_fpga
+```
+From now on, it will always automatically load the fpga bitstream on boot.
 
 After the Linux is successfully booted you can log into the system with previously created user and try to load `zc_dma_mem.ko` kernel module:
 
