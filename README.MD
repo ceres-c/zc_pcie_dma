@@ -229,12 +229,13 @@ network:
   renderer: networkd
   ethernets:
     eth0:
-      dhcp4: no
-      addresses:
-        - 192.168.2.248/24
-      gateway4: 192.168.2.1
+      addresses: [ "10.20.249.11/24" ]
       nameservers:
         addresses: [8.8.8.8, 1.1.1.1]
+      routes:
+        - to: 0.0.0.0/0
+          via: 10.20.0.1
+          on-link: true
 ```
 
 Quit from chroot environment:
