@@ -229,6 +229,7 @@ network:
   renderer: networkd
   ethernets:
     eth0:
+      dhcp4: no
       addresses: [ "10.20.249.11/24" ]
       nameservers:
         addresses: [8.8.8.8, 1.1.1.1]
