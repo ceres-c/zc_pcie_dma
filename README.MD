@@ -104,9 +104,9 @@ For production use of your Zynq based project it's more preferable to run Linux 
 Download and unpack most recent Buildroot version:
 
 ```
-$ wget https://buildroot.org/downloads/buildroot-2021.02.tar.gz
-$ tar -xpvf buildroot-2021.02.tar.gz
-$ cd ~/buildroot-2021.02
+$ wget https://buildroot.org/downloads/buildroot-2025.02.tar.gz
+$ tar -xpvf buildroot-2025.02.tar.gz
+$ cd ~/buildroot-2025.02
 ```
 
 Initialize build environment using [standard profile for ZC706 development board](https://github.com/buildroot/buildroot/blob/master/configs/zynq_zc706_defconfig):
@@ -119,13 +119,13 @@ $ echo “BR2_PACKAGE_ZC_DMA_MEM=y” >> .config
 Configure Linux kernel, make sure that `CONFIG_GPIO_XILINX` and `CONFIG_UIO` options required for this project are enabled:
 
 ```
-$ make linux-menuconfig
+$ make BR2_EXTERNAL="path/to/zc_pcie_dma/kernel/zc_dma_mem" linux-menuconfig
 ```
 
 Compile kernel, bootloder and `zc_dma_mem.ko` kernel module:
 
 ```
-$ make BR2_EXTERNAL="path/to/zc_pcie_dma/kernel/zc_dma_mem" all
+$ make all
 ```
 
 After completing this step you will have the following files required for our system:
@@ -135,7 +135,7 @@ After completing this step you will have the following files required for our sy
  * `output/images/uImage` &minus; Linux kernel image.
  * `output/target/lib/modules` &minus; Loadable kernel modules along with `zc_dma_mem.ko`.
 
-To prepare root file system with Ubuntu 20.04 we will use [debootstrap and QEMU userspace emulation](https://wiki.ubuntu.com/ARM/RootfsFromScratch/QemuDebootstrap):
+To prepare root file system with Ubuntu 20.04 we will use [debootstrap and QEMU userspace emulation](https://wiki.ubuntu.com/ARM/RootfsFromScratch/QemuDebootstrap). Please not you can **not** do this inside a container:
 
 ```
 $ sudo apt install qemu-user-static qemu-user-binfmt
@@ -165,6 +165,11 @@ Prepare chroot environment to run second stage of debootstrap:
 ```
 $ sudo cp /usr/bin/qemu-arm-static debootstrap_focal_armhf/usr/bin
 $ sudo chroot debootstrap_focal_armhf /bin/bash
+```
+
+If you see something like `I have no name!@<host hostname>` in your terminal after debootstrapping, then fix it with
+```
+ls /etc/group /etc/passwd
 ```
 
 Run second stage:
@@ -225,11 +230,13 @@ network:
   ethernets:
     eth0:
       dhcp4: no
-      addresses:
-        - 192.168.2.248/24
-      gateway4: 192.168.2.1
+      addresses: [ "10.20.249.11/24" ]
       nameservers:
         addresses: [8.8.8.8, 1.1.1.1]
+      routes:
+        - to: 0.0.0.0/0
+          via: 10.20.0.1
+          on-link: true
 ```
 
 Quit from chroot environment:
@@ -311,7 +318,8 @@ $ sudo mount /dev/sdc1 /mnt/tmp
 $ sudo cp ~/buildroot-2021.02/output/images/boot.bin /mnt/tmp
 $ sudo cp ~/buildroot-2021.02/output/images/u-boot.img /mnt/tmp
 $ sudo cp ~/buildroot-2021.02/output/images/uImage /mnt/tmp
-$ sudo cp ~/zc_pcie_dma/uEnv.txt /mnt/tmp
+$ sudo mkdir /mnt/tmp/extlinux
+$ sudo cp extlinux.conf /mnt/tmp/extlinux
 $ sudo cp ~/zc_pcie_dma/devicetree.dtb /mnt/tmp
 $ sudo cp ~/zc_pcie_dma/zc_pcie_dma.bit /mnt/tmp
 $ sudo umount /mnt/tmp
@@ -338,6 +346,15 @@ Now you can connect USB cable to the serial console of ZC706, insert prepared SD
 $ sudo pip install pyserial
 $ sudo miniterm.py --eol LF --raw /dev/ttyUSB0 115200
 ```
+
+Stop U-Boot boot process when it asks you so, and type
+```"
+setenv load_fpga "fatload mmc 0 0x4000000 zc_pcie_dma.bit && fpga loadb 0 0x4000000 13321511"
+setenv bootcmd "run load_fpga; run distro_bootcmd"
+saveenv
+run load_fpga
+```
+From now on, it will always automatically load the fpga bitstream on boot.
 
 After the Linux is successfully booted you can log into the system with previously created user and try to load `zc_dma_mem.ko` kernel module:
 
