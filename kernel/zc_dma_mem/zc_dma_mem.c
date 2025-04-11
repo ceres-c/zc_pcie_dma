@@ -24,6 +24,7 @@ MODULE_LICENSE("GPL");
 #define DEVICE_CLASS "zc_dma_mem"
 #define DEVICE_NAME  "zc_dma_mem_%d"
 #define DEVICE_MODE  0666
+#define VERBOSE
 
 // number of devices to create
 #define DEVICE_COUNT 2
@@ -56,10 +57,12 @@ MODULE_LICENSE("GPL");
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 
+#pragma push_macro("ALIGN_DOWN")
+#undef ALIGN_DOWN
 #define ALIGN_DOWN(n, m) ((n) / (m) * (m))
 #define ALIGN_UP(n, m) ALIGN_DOWN((n) + (m) - 1, (m))
 
-struct device_data 
+struct device_data
 {
     struct cdev cdev;
 };
@@ -73,6 +76,7 @@ struct device_context
 static int dev_major = 0;
 static struct class *zc_dma_mem_dev_class = NULL;
 static struct device_data zc_dma_mem_dev_data[DEVICE_COUNT];
+static struct device *zc_dma_mem_classdev[DEVICE_COUNT];
 
 // memory region for DMA I/O
 static dma_addr_t addr_phys = 0;
@@ -112,11 +116,11 @@ static int my_set(const char *val, const struct kernel_param *kp)
     {
         return -EINVAL;
     }
- 
+
     return param_set_int(val, kp);
 }
- 
-static const struct kernel_param_ops param_ops = 
+
+static const struct kernel_param_ops param_ops =
 {
     .set = my_set,
     .get = param_get_int
@@ -150,7 +154,7 @@ static void dma_reset(unsigned int *dma_dev)
     dma_reg_write(dma_dev, DMA_REG_CONTROL, 0);
 
     while (true)
-    {                
+    {
         // check if reset is completed
         if ((dma_reg_read(dma_dev, DMA_REG_STATUS) & DMA_ST_HALTED) != 0)
         {
@@ -170,7 +174,7 @@ static int dma_transfer(unsigned int *dma_dev, unsigned long long addr, unsigned
 
     // start transfer
     dma_reg_write(dma_dev, DMA_REG_CONTROL, DMA_CR_START);
-    dma_reg_write(dma_dev, DMA_REG_LENGTH, size);    
+    dma_reg_write(dma_dev, DMA_REG_LENGTH, size);
 
     while (true)
     {
@@ -189,7 +193,7 @@ static int dma_transfer(unsigned int *dma_dev, unsigned long long addr, unsigned
             dma_reset(dma_dev);
 
             printk(KERN_ERR "dma_transfer() fails, timeout occurred\n");
-            return -ETIME; 
+            return -ETIME;
         }
     }
 
@@ -204,7 +208,7 @@ static int dma_transfer(unsigned int *dma_dev, unsigned long long addr, unsigned
 }
 
 static int tlp_recv(unsigned int *ret_size)
-{    
+{
     int size = 0, err = 0;
 
     // perform DMA transfer to receive TLP
@@ -231,7 +235,7 @@ static int tlp_recv(unsigned int *ret_size)
 }
 
 static int tlp_send(unsigned int size)
-{   
+{
     int err = 0;
 
     // perform DMA transfer to send TLP
@@ -244,7 +248,7 @@ static int tlp_send(unsigned int size)
 }
 
 static unsigned int cfg_read(unsigned int addr, unsigned int *data)
-{   
+{
     int err = 0;
 
     // put address two times to assert cfg_mgmt_rd_en for two clock cycles
@@ -283,7 +287,7 @@ static unsigned int cfg_read(unsigned int addr, unsigned int *data)
 static int mem_read(unsigned long long addr, unsigned char *buff, unsigned int size)
 {
     struct device_id dev_id;
-    unsigned int ptr = 0, err = 0;    
+    unsigned int ptr = 0, err = 0;
 
     if (addr % sizeof(unsigned int) != 0)
     {
@@ -305,12 +309,12 @@ static int mem_read(unsigned long long addr, unsigned char *buff, unsigned int s
         printk(KERN_ERR "mem_read() ERROR: PCI-E endpoint is not initialized\n");
         return -ENOTCONN;
     }
-    
+
     while (ptr < size)
     {
         unsigned char tlp_tag = mem_read_tag;
         unsigned int tlp_size = 0, data_len = 0, received = 0;
-        unsigned int read_len = 0, read_len_max = max_tlp_len; 
+        unsigned int read_len = 0, read_len_max = max_tlp_len;
 
         if ((addr & 0xfff) != 0)
         {
@@ -324,10 +328,10 @@ static int mem_read(unsigned long long addr, unsigned char *buff, unsigned int s
         read_len = MIN((size - ptr) / sizeof(unsigned int), read_len_max);
 
         // set TLP type and data size
-        addr_virt_tx[0] = (TLP_TYPE_MRd64 << 24) | read_len;               
+        addr_virt_tx[0] = (TLP_TYPE_MRd64 << 24) | read_len;
 
         // set requester ID, tag and byte enable flags
-        addr_virt_tx[1] = (dev_id.val << 16) | (tlp_tag << 8) | 0xff;  
+        addr_virt_tx[1] = (dev_id.val << 16) | (tlp_tag << 8) | 0xff;
 
         // set physical memory address
         addr_virt_tx[2] = (unsigned int)(addr >> 32);
@@ -360,7 +364,7 @@ static int mem_read(unsigned long long addr, unsigned char *buff, unsigned int s
             if ((unsigned char)(addr_virt_rx[2] >> 8) != tlp_tag)
             {
                 printk(
-                    KERN_ERR "mem_read() ERROR: Bad completion tag (0x%.2x != 0x%.2x) for address 0x%llx\n", 
+                    KERN_ERR "mem_read() ERROR: Bad completion tag (0x%.2x != 0x%.2x) for address 0x%llx\n",
                     (unsigned char)(addr_virt_rx[2] >> 8), tlp_tag, addr
                 );
 
@@ -373,15 +377,15 @@ static int mem_read(unsigned long long addr, unsigned char *buff, unsigned int s
             for (int i = 0; i < data_len; i += 1)
             {
                 // copy data to the output buffer with reversed byte order
-                *(unsigned int *)(buff + ptr + (i * sizeof(unsigned int))) = htonl(addr_virt_rx[i + 3]); 
+                *(unsigned int *)(buff + ptr + (i * sizeof(unsigned int))) = htonl(addr_virt_rx[i + 3]);
             }
-            
+
             addr += data_len * sizeof(unsigned int);
-            ptr += data_len * sizeof(unsigned int);        
+            ptr += data_len * sizeof(unsigned int);
         }
 
-        mem_read_tag += 1;        
-    }    
+        mem_read_tag += 1;
+    }
 
     return 0;
 }
@@ -389,7 +393,7 @@ static int mem_read(unsigned long long addr, unsigned char *buff, unsigned int s
 static int mem_write(unsigned long long addr, unsigned char *buff, unsigned int size)
 {
     struct device_id dev_id;
-    unsigned int ptr = 0, err = 0;    
+    unsigned int ptr = 0, err = 0;
 
     if (addr % sizeof(unsigned int) != 0)
     {
@@ -415,10 +419,10 @@ static int mem_write(unsigned long long addr, unsigned char *buff, unsigned int 
     while (ptr < size)
     {
         // set TLP type and data size
-        addr_virt_tx[0] = (TLP_TYPE_MWr64 << 24) | 1; 
+        addr_virt_tx[0] = (TLP_TYPE_MWr64 << 24) | 1;
 
         // set requester ID and byte enable flags
-        addr_virt_tx[1] = (dev_id.val << 16) | 0xff;    
+        addr_virt_tx[1] = (dev_id.val << 16) | 0xff;
 
         // set physical memory address
         addr_virt_tx[2] = (unsigned int)(addr >> 32);
@@ -447,7 +451,7 @@ static int zc_dma_mem_dev_open(struct inode *inode, struct file *file)
 
 #ifdef VERBOSE
 
-    printk(KERN_INFO "zc_dma_mem_dev_open()\n");    
+    printk(KERN_INFO "zc_dma_mem_dev_open()\n");
 
 #endif
 
@@ -518,7 +522,7 @@ static long zc_dma_mem_dev_ioctl(struct file *file, unsigned int cmd, unsigned l
         get_device_id(&dev_id);
 
         // copy data to the user buffer
-        if (copy_to_user(arg_user, &dev_id, sizeof(struct device_id)) != 0) 
+        if (copy_to_user(arg_user, &dev_id, sizeof(struct device_id)) != 0)
         {
             printk(KERN_ERR "zc_dma_mem_dev_ioctl() ERROR: copy_to_user() fails\n");
             return -EACCES;
@@ -532,7 +536,7 @@ static long zc_dma_mem_dev_ioctl(struct file *file, unsigned int cmd, unsigned l
         unsigned int cfg_addr = 0, cfg_data = 0;
 
         // copy address from the the user buffer
-        if (copy_from_user(&cfg_addr, arg_user, sizeof(cfg_addr)) != 0) 
+        if (copy_from_user(&cfg_addr, arg_user, sizeof(cfg_addr)) != 0)
         {
             printk(KERN_ERR "zc_dma_mem_dev_ioctl() ERROR: copy_from_user() fails\n");
             return -EACCES;
@@ -544,14 +548,14 @@ static long zc_dma_mem_dev_ioctl(struct file *file, unsigned int cmd, unsigned l
         int err = cfg_read(cfg_addr, &cfg_data);
 
         spin_unlock(&dma_dev_lock);
-        
+
         if (err != 0)
         {
-            return err;   
+            return err;
         }
 
         // copy data to the user buffer
-        if (copy_to_user(arg_user, &cfg_data, sizeof(cfg_data)) != 0) 
+        if (copy_to_user(arg_user, &cfg_data, sizeof(cfg_data)) != 0)
         {
             printk(KERN_ERR "zc_dma_mem_dev_ioctl() ERROR: copy_to_user() fails\n");
             return -EACCES;
@@ -564,9 +568,9 @@ static long zc_dma_mem_dev_ioctl(struct file *file, unsigned int cmd, unsigned l
 }
 
 static loff_t zc_dma_mem_dev_llseek(struct file *file, loff_t offset, int whence)
-{    
+{
     int device_num = MINOR(file->f_path.dentry->d_inode->i_rdev);
-    struct device_context *ctx = (struct device_context *)file->private_data;    
+    struct device_context *ctx = (struct device_context *)file->private_data;
 
     if (device_num == DEVICE_NUM_MEM)
     {
@@ -601,13 +605,13 @@ static ssize_t zc_dma_mem_dev_read(struct file *file, char __user *buf, size_t c
 {
     ssize_t ret = -ENODEV;
     int device_num = MINOR(file->f_path.dentry->d_inode->i_rdev);
-    struct device_context *ctx = (struct device_context *)file->private_data;    
+    struct device_context *ctx = (struct device_context *)file->private_data;
 
     if (device_num == DEVICE_NUM_MEM)
     {
         // address and size must be aligned by word boundary
         unsigned long long read_addr = ALIGN_DOWN(ctx->addr, DMA_MEM_ALIGN);
-        unsigned int read_size = ALIGN_UP((unsigned int)(count + (ctx->addr - read_addr)), DMA_MEM_ALIGN);    
+        unsigned int read_size = ALIGN_UP((unsigned int)(count + (ctx->addr - read_addr)), DMA_MEM_ALIGN);
 
         // allocate memory contents buffer
         unsigned char *data = vmalloc(read_size);
@@ -623,11 +627,11 @@ static ssize_t zc_dma_mem_dev_read(struct file *file, char __user *buf, size_t c
         ret = mem_read(read_addr, data, read_size);
 
         spin_unlock(&dma_dev_lock);
-        
+
         if (ret == 0)
         {
             // copy data to the user buffer
-            if (copy_to_user(buf, data + (ctx->addr - read_addr), count) == 0) 
+            if (copy_to_user(buf, data + (ctx->addr - read_addr), count) == 0)
             {
                 // increment current read/write address
                 ctx->addr += count;
@@ -640,12 +644,12 @@ static ssize_t zc_dma_mem_dev_read(struct file *file, char __user *buf, size_t c
             }
         }
 
-        vfree(data);    
+        vfree(data);
     }
     else if (device_num == DEVICE_NUM_TLP)
     {
         size_t size = 0;
-        unsigned int tlp_size = 0;     
+        unsigned int tlp_size = 0;
 
         spin_lock(&dma_dev_lock);
 
@@ -653,7 +657,7 @@ static ssize_t zc_dma_mem_dev_read(struct file *file, char __user *buf, size_t c
         ret = tlp_recv(&tlp_size);
 
         spin_unlock(&dma_dev_lock);
-        
+
         if (ret != 0)
         {
             printk(KERN_ERR "zc_dma_mem_dev_read() ERROR: tlp_recv() fails\n");
@@ -668,7 +672,7 @@ static ssize_t zc_dma_mem_dev_read(struct file *file, char __user *buf, size_t c
             if (copy_to_user(buf, addr_virt_rx, size) == 0)
             {
                 ret = size;
-            } 
+            }
             else
             {
                 printk(KERN_ERR "zc_dma_mem_dev_read() ERROR: copy_to_user() fails\n");
@@ -679,7 +683,7 @@ static ssize_t zc_dma_mem_dev_read(struct file *file, char __user *buf, size_t c
         {
             printk(KERN_ERR "zc_dma_mem_dev_read() ERROR: Insufficient buffer length\n");
             ret = -ENOMEM;
-        }        
+        }
     }
 
     return ret;
@@ -689,13 +693,13 @@ static ssize_t zc_dma_mem_dev_write(struct file *file, const char __user *buf, s
 {
     ssize_t ret = -ENODEV;
     int device_num = MINOR(file->f_path.dentry->d_inode->i_rdev);
-    struct device_context *ctx = (struct device_context *)file->private_data;    
+    struct device_context *ctx = (struct device_context *)file->private_data;
 
     if (device_num == DEVICE_NUM_MEM)
     {
         // address and size must be aligned by word boundary
         unsigned long long read_addr = ALIGN_DOWN(ctx->addr, DMA_MEM_ALIGN);
-        unsigned int read_size = ALIGN_UP((unsigned int)(count + (ctx->addr - read_addr)), DMA_MEM_ALIGN);    
+        unsigned int read_size = ALIGN_UP((unsigned int)(count + (ctx->addr - read_addr)), DMA_MEM_ALIGN);
 
         // allocate memory contents buffer
         unsigned char *data = vmalloc(read_size);
@@ -711,11 +715,11 @@ static ssize_t zc_dma_mem_dev_write(struct file *file, const char __user *buf, s
         ret = mem_read(read_addr, data, read_size);
 
         spin_unlock(&dma_dev_lock);
-        
+
         if (ret == 0)
         {
             // copy data from the user buffer
-            if (copy_from_user(data + (ctx->addr - read_addr), buf, count) == 0) 
+            if (copy_from_user(data + (ctx->addr - read_addr), buf, count) == 0)
             {
                 spin_lock(&dma_dev_lock);
 
@@ -730,7 +734,7 @@ static ssize_t zc_dma_mem_dev_write(struct file *file, const char __user *buf, s
                     ctx->addr += count;
                     ret = count;
                 }
-            }        
+            }
             else
             {
                 printk(KERN_ERR "zc_dma_mem_dev_write() ERROR: copy_from_user() fails\n");
@@ -738,8 +742,8 @@ static ssize_t zc_dma_mem_dev_write(struct file *file, const char __user *buf, s
             }
         }
 
-        vfree(data); 
-    } 
+        vfree(data);
+    }
     else if (device_num == DEVICE_NUM_TLP)
     {
         if (count % sizeof(unsigned int) != 0 || count > PAGE_SIZE)
@@ -749,7 +753,7 @@ static ssize_t zc_dma_mem_dev_write(struct file *file, const char __user *buf, s
         }
 
         // copy TLP from the user buffer
-        if (copy_from_user(addr_virt_tx, buf, count) == 0) 
+        if (copy_from_user(addr_virt_tx, buf, count) == 0)
         {
             spin_lock(&dma_dev_lock);
 
@@ -765,18 +769,18 @@ static ssize_t zc_dma_mem_dev_write(struct file *file, const char __user *buf, s
             }
 
             ret = count;
-        }        
+        }
         else
         {
             printk(KERN_ERR "zc_dma_mem_dev_write() ERROR: copy_from_user() fails\n");
             ret = -EACCES;
         }
-    }  
+    }
 
     return ret;
 }
 
-static int zc_dma_mem_dev_uevent(struct device *dev, struct kobj_uevent_env *env)
+static int zc_dma_mem_dev_uevent(const struct device *dev, struct kobj_uevent_env *env)
 {
     add_uevent_var(env, "DEVMODE=%#o", DEVICE_MODE);
 
@@ -806,7 +810,7 @@ static unsigned long find_device_address(const char *dev_type, const char *dev_n
                     {
                         // return device base
                         return htonl(*(unsigned long *)prop_reg);
-                    }       
+                    }
 
                     break;
                 }
@@ -818,7 +822,7 @@ static unsigned long find_device_address(const char *dev_type, const char *dev_n
     return 0;
 }
 
-static const struct file_operations zc_dma_mem_dev_fops = 
+static const struct file_operations zc_dma_mem_dev_fops =
 {
     .owner          = THIS_MODULE,
     .llseek         = zc_dma_mem_dev_llseek,
@@ -830,9 +834,33 @@ static const struct file_operations zc_dma_mem_dev_fops =
 };
 
 static int zc_dma_mem_init(void)
-{    
+{
     int err = -1;
     unsigned long dev_addr_phys = 0;
+
+    dev_t dev;
+    dev_major = MAJOR(dev);
+
+    // register device class
+    zc_dma_mem_dev_class = class_create(DEVICE_CLASS);
+    zc_dma_mem_dev_class->dev_uevent = zc_dma_mem_dev_uevent;
+
+    for (int i = 0; i < DEVICE_COUNT; i += 1)
+    {
+        // initialize device
+        cdev_init(&zc_dma_mem_dev_data[i].cdev, &zc_dma_mem_dev_fops);
+        zc_dma_mem_dev_data[i].cdev.owner = THIS_MODULE;
+
+        // add device file
+        cdev_add(&zc_dma_mem_dev_data[i].cdev, MKDEV(dev_major, i), 1);
+        zc_dma_mem_classdev[i] = device_create(zc_dma_mem_dev_class, NULL, MKDEV(dev_major, i), NULL, DEVICE_NAME, i);
+    }
+
+    // allocate character devices range
+    if ((err = alloc_chrdev_region(&dev, 0, 1, DEVICE_NAME)) != 0)
+    {
+        return err;
+    }
 
 #ifdef VERBOSE
 
@@ -843,15 +871,15 @@ static int zc_dma_mem_init(void)
     spin_lock_init(&dma_dev_lock);
 
     // allocate DMA buffer
-    if ((addr_virt = dma_alloc_coherent(NULL, DMA_MEM_SIZE, &addr_phys, GFP_KERNEL)) == 0)
+    if ((addr_virt = dma_alloc_coherent(zc_dma_mem_classdev[0], DMA_MEM_SIZE, &addr_phys, GFP_KERNEL)) == 0)
     {
         printk(KERN_ERR "dma_alloc_coherent() fails\n");
         goto _end;
-    }   
+    }
 
 #ifdef VERBOSE
 
-    printk(KERN_INFO "DMA buffer is at 0x%p (phys: 0x%x)\n", addr_virt, addr_phys); 
+    printk(KERN_INFO "DMA buffer is at 0x%p (phys: 0x%x)\n", addr_virt, addr_phys);
 
 #endif
 
@@ -865,7 +893,7 @@ static int zc_dma_mem_init(void)
     if ((dev_addr_phys = find_device_address(DT_TYPE, DT_NAME_DMA_0)) != 0)
     {
         // map MMIO region
-        if ((dev_addr_dma_0 = ioremap_nocache(dev_addr_phys, PAGE_SIZE)) != NULL)
+        if ((dev_addr_dma_0 = ioremap(dev_addr_phys, PAGE_SIZE)) != NULL)
         {
 
 #ifdef VERBOSE
@@ -886,14 +914,14 @@ static int zc_dma_mem_init(void)
     else
     {
         printk(KERN_ERR "ERROR: Unable to find \"%s\" device\n", DT_NAME_DMA_0);
-        goto _end;   
+        goto _end;
     }
 
     // get device MMIO region physical address
     if ((dev_addr_phys = find_device_address(DT_TYPE, DT_NAME_DMA_1)) != 0)
     {
         // map MMIO region
-        if ((dev_addr_dma_1 = ioremap_nocache(dev_addr_phys, PAGE_SIZE)) != NULL)
+        if ((dev_addr_dma_1 = ioremap(dev_addr_phys, PAGE_SIZE)) != NULL)
         {
 
 #ifdef VERBOSE
@@ -914,14 +942,14 @@ static int zc_dma_mem_init(void)
     else
     {
         printk(KERN_ERR "ERROR: Unable to find \"%s\" device\n", DT_NAME_DMA_1);
-        goto _end;   
+        goto _end;
     }
 
     // get device MMIO region physical address
     if ((dev_addr_phys = find_device_address(DT_TYPE, DT_NAME_GPIO)) != 0)
     {
         // map MMIO region
-        if ((dev_addr_gpio = ioremap_nocache(dev_addr_phys, PAGE_SIZE)) != NULL)
+        if ((dev_addr_gpio = ioremap(dev_addr_phys, PAGE_SIZE)) != NULL)
         {
 
 #ifdef VERBOSE
@@ -937,15 +965,7 @@ static int zc_dma_mem_init(void)
     else
     {
         printk(KERN_ERR "ERROR: Unable to find \"%s\" device\n", DT_NAME_GPIO);
-        goto _end;   
-    }
-
-    dev_t dev;
-
-    // allocate character devices range
-    if ((err = alloc_chrdev_region(&dev, 0, 1, DEVICE_NAME)) != 0)
-    {
-        return err;
+        goto _end;
     }
 
 #ifdef VERBOSE
@@ -953,23 +973,6 @@ static int zc_dma_mem_init(void)
     printk(KERN_INFO "Creating /dev/%s character device\n", DEVICE_NAME);
 
 #endif
-
-    dev_major = MAJOR(dev);
-
-    // register device class
-    zc_dma_mem_dev_class = class_create(THIS_MODULE, DEVICE_CLASS);
-    zc_dma_mem_dev_class->dev_uevent = zc_dma_mem_dev_uevent;
-
-    for (int i = 0; i < DEVICE_COUNT; i += 1) 
-    {
-        // initialize device
-        cdev_init(&zc_dma_mem_dev_data[i].cdev, &zc_dma_mem_dev_fops);
-        zc_dma_mem_dev_data[i].cdev.owner = THIS_MODULE;
-
-        // add device file
-        cdev_add(&zc_dma_mem_dev_data[i].cdev, MKDEV(dev_major, i), 1);
-        device_create(zc_dma_mem_dev_class, NULL, MKDEV(dev_major, i), NULL, DEVICE_NAME, i);
-    }
 
 _end:
 
@@ -993,7 +996,7 @@ _end:
 
         if (addr_virt != 0)
         {
-            dma_free_coherent(NULL, DMA_MEM_SIZE, addr_virt, addr_phys);
+            dma_free_coherent(zc_dma_mem_classdev[0], DMA_MEM_SIZE, addr_virt, addr_phys);
         }
     }
 
@@ -1026,10 +1029,10 @@ static void zc_dma_mem_exit(void)
 
     if (addr_virt != 0)
     {
-        dma_free_coherent(NULL, DMA_MEM_SIZE, addr_virt, addr_phys);
+        dma_free_coherent(zc_dma_mem_classdev[0], DMA_MEM_SIZE, addr_virt, addr_phys);
     }
 
-    for (int i = 0; i < DEVICE_COUNT; i += 1) 
+    for (int i = 0; i < DEVICE_COUNT; i += 1)
     {
         // delete device
         device_destroy(zc_dma_mem_dev_class, MKDEV(dev_major, i));
@@ -1045,3 +1048,5 @@ static void zc_dma_mem_exit(void)
 
 module_init(zc_dma_mem_init)
 module_exit(zc_dma_mem_exit)
+
+#pragma pop_macro("ALIGN_DOWN")
