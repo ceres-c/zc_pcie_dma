@@ -44,7 +44,7 @@ The project consists from the following files:
 
  * `devicetree.dtb` &minus; Ready to use device tree binary.
 
- * `uEnv.txt` &minus; uBoot bootloader configuration file used to load bitstream and boot Linux kernel.
+ * `extinfo.conf` &minus; uBoot bootloader configuration file used to load bitstream and boot Linux kernel.
 
  * `kernel/zc_dma_mem/` &minus; Source code of `zc_dma_mem.ko` loadable kernel module.
 
@@ -59,7 +59,7 @@ To build FPGA bitstream and device tree you have to perform the following steps:
 
  2. Open `zc_pcie_dma/zc_pcie_dma.xpr` in Vivado, run synthesis, implementation, generate the bitstream and export hardware design into the `zc_pcie_dma.xsa` file.
 
- 3. Run `make bin` and edit `uEnv.txt` with U-Boot configuration to set correct size of `zc_pcie_dma.bit` file at the end of `fpga loadb` command.
+ 3. Run `make bin` and edit `extlinux.conf` with U-Boot configuration to set correct size of `zc_pcie_dma.bit` file at the end of `fpga loadb` command.
 
  4. Run `git submodule init && git submodule update`, cd into the `devicetree/my_dtg/device-tree-xlnx` and run `git checkout xilinx-v2020.1`.
 
@@ -69,7 +69,7 @@ To build FPGA bitstream and device tree you have to perform the following steps:
 
  7. Run `make dts_build` to generate device tree binary. 
 
- 8. Copy `uEnv.txt`, `devicetree.dtb` and `zc_pcie_dma.bit` files to the boot partition (will be described below).
+ 8. Copy `extinfo.conf`, `devicetree.dtb` and `zc_pcie_dma.bit` files to the boot partition (will be described below).
 
 For more information on building the device tree see Xilinx wiki: 
 
@@ -119,7 +119,7 @@ $ echo “BR2_PACKAGE_ZC_DMA_MEM=y” >> .config
 Configure Linux kernel, make sure that `CONFIG_GPIO_XILINX` and `CONFIG_UIO` options required for this project are enabled:
 
 ```
-$ make BR2_EXTERNAL="path/to/zc_pcie_dma/kernel/zc_dma_mem" linux-menuconfig
+$ FORCE_UNSAFE_CONFIGURE=1 make BR2_EXTERNAL="path/to/zc_pcie_dma/kernel/zc_dma_mem" linux-menuconfig
 ```
 
 Compile kernel, bootloder and `zc_dma_mem.ko` kernel module:
@@ -210,14 +210,8 @@ $ passwd
 Create new non-root user and add it into the sudo group:
 
 ```
+$ adduser user
 $ adduser user sudo
-```
-
-Add some packages sources:
-
-```
-$ cat /etc/apt/sources.list
-deb http://ports.ubuntu.com/ubuntu-ports focal main
 ```
 
 Configure LAN network:
@@ -315,11 +309,11 @@ Mount boot partition as `/mnt/tmp` and copy needed files:
 ```
 $ sudo mkdir /mnt/tmp
 $ sudo mount /dev/sdc1 /mnt/tmp
-$ sudo cp ~/buildroot-2021.02/output/images/boot.bin /mnt/tmp
-$ sudo cp ~/buildroot-2021.02/output/images/u-boot.img /mnt/tmp
-$ sudo cp ~/buildroot-2021.02/output/images/uImage /mnt/tmp
+$ sudo cp ~/buildroot-2025.02/output/images/boot.bin /mnt/tmp
+$ sudo cp ~/buildroot-2025.02/output/images/u-boot.img /mnt/tmp
+$ sudo cp ~/buildroot-2025.02/output/images/uImage /mnt/tmp
 $ sudo mkdir /mnt/tmp/extlinux
-$ sudo cp extlinux.conf /mnt/tmp/extlinux
+$ sudo cp ~/zc_pcie_dma/extlinux.conf /mnt/tmp/extlinux
 $ sudo cp ~/zc_pcie_dma/devicetree.dtb /mnt/tmp
 $ sudo cp ~/zc_pcie_dma/zc_pcie_dma.bit /mnt/tmp
 $ sudo umount /mnt/tmp
@@ -330,7 +324,7 @@ Mount root partition as `/mnt/tmp`, copy root file system contents and kernel mo
 ```
 $ sudo mount /dev/sdc2 /mnt/tmp
 $ sudo cp -a ~/debootstrap_focal_armhf/. /mnt/tmp
-$ sudo cp -a ~/buildroot-2021.02/output/target/lib/modules /mnt/tmp/lib
+$ sudo cp -a ~/buildroot-2025.02/output/target/lib/modules /mnt/tmp/lib
 $ sudo umount /mnt/tmp
 ```
 
@@ -352,7 +346,7 @@ Stop U-Boot boot process when it asks you so, and type
 setenv load_fpga "fatload mmc 0 0x4000000 zc_pcie_dma.bit && fpga loadb 0 0x4000000 13321511"
 setenv bootcmd "run load_fpga; run distro_bootcmd"
 saveenv
-run load_fpga
+bootd
 ```
 From now on, it will always automatically load the fpga bitstream on boot.
 
