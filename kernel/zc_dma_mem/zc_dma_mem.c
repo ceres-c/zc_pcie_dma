@@ -838,8 +838,23 @@ static int zc_dma_mem_init(void)
     int err = -1;
     unsigned long dev_addr_phys = 0;
 
+    #ifdef VERBOSE
+    printk(KERN_INFO "zc_dma_mem_init()\n");
+    #endif
+
+    spin_lock_init(&dma_dev_lock);
+
     dev_t dev;
+    // allocate character devices range
+    if ((err = alloc_chrdev_region(&dev, 0, 1, DEVICE_NAME)) != 0)
+    {
+        return err;
+    }
     dev_major = MAJOR(dev);
+
+    #ifdef VERBOSE
+    printk(KERN_INFO "Creating /dev/%s character device\n", DEVICE_NAME);
+    #endif
 
     // register device class
     zc_dma_mem_dev_class = class_create(DEVICE_CLASS);
@@ -852,23 +867,16 @@ static int zc_dma_mem_init(void)
         zc_dma_mem_dev_data[i].cdev.owner = THIS_MODULE;
 
         // add device file
+        #ifdef VERBOSE
+        printk(KERN_INFO "Creating device file. Major: %d, minor: %d\n", dev_major, i);
+        #endif
         cdev_add(&zc_dma_mem_dev_data[i].cdev, MKDEV(dev_major, i), 1);
         zc_dma_mem_classdev[i] = device_create(zc_dma_mem_dev_class, NULL, MKDEV(dev_major, i), NULL, DEVICE_NAME, i);
+        if (IS_ERR_OR_NULL(zc_dma_mem_classdev[i])) {
+            printk(KERN_ERR "device_create failed\n");
+            // TODO handle error gently
+        }
     }
-
-    // allocate character devices range
-    if ((err = alloc_chrdev_region(&dev, 0, 1, DEVICE_NAME)) != 0)
-    {
-        return err;
-    }
-
-#ifdef VERBOSE
-
-    printk(KERN_INFO "zc_dma_mem_init()\n");
-
-#endif
-
-    spin_lock_init(&dma_dev_lock);
 
     // allocate DMA buffer
     if ((addr_virt = dma_alloc_coherent(zc_dma_mem_classdev[0], DMA_MEM_SIZE, &addr_phys, GFP_KERNEL)) == 0)
@@ -877,11 +885,9 @@ static int zc_dma_mem_init(void)
         goto _end;
     }
 
-#ifdef VERBOSE
-
+    #ifdef VERBOSE
     printk(KERN_INFO "DMA buffer is at 0x%p (phys: 0x%x)\n", addr_virt, addr_phys);
-
-#endif
+    #endif
 
     addr_virt_tx = (unsigned int *)(addr_virt);
     addr_virt_rx = (unsigned int *)(addr_virt + PAGE_SIZE);
@@ -896,10 +902,9 @@ static int zc_dma_mem_init(void)
         if ((dev_addr_dma_0 = ioremap(dev_addr_phys, PAGE_SIZE)) != NULL)
         {
 
-#ifdef VERBOSE
-
+            #ifdef VERBOSE
             printk(KERN_INFO "DMA device base is 0x%p (phys: 0x%lx)\n", dev_addr_dma_0, dev_addr_phys);
-#endif
+            #endif
             // DMA transmit channel MMIO address
             dev_addr_dma_0_tx = dev_addr_dma_0;
 
@@ -924,10 +929,9 @@ static int zc_dma_mem_init(void)
         if ((dev_addr_dma_1 = ioremap(dev_addr_phys, PAGE_SIZE)) != NULL)
         {
 
-#ifdef VERBOSE
-
+            #ifdef VERBOSE
             printk(KERN_INFO "DMA device base is 0x%p (phys: 0x%lx)\n", dev_addr_dma_1, dev_addr_phys);
-#endif
+            #endif
             // DMA transmit channel MMIO address
             dev_addr_dma_1_tx = dev_addr_dma_1;
 
@@ -952,10 +956,9 @@ static int zc_dma_mem_init(void)
         if ((dev_addr_gpio = ioremap(dev_addr_phys, PAGE_SIZE)) != NULL)
         {
 
-#ifdef VERBOSE
-
+            #ifdef VERBOSE
             printk(KERN_INFO "GPIO device base is 0x%p (phys: 0x%lx)\n", dev_addr_gpio, dev_addr_phys);
-#endif
+            #endif
         }
         else
         {
@@ -967,12 +970,6 @@ static int zc_dma_mem_init(void)
         printk(KERN_ERR "ERROR: Unable to find \"%s\" device\n", DT_NAME_GPIO);
         goto _end;
     }
-
-#ifdef VERBOSE
-
-    printk(KERN_INFO "Creating /dev/%s character device\n", DEVICE_NAME);
-
-#endif
 
 _end:
 
