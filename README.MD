@@ -2,6 +2,7 @@
 # Xilinx Zynq DMA attack tools
 
 [General Information](#general-information)  
+[Using the prebuilt image](#Using-the-prebuilt-image)  
 [Building the Project](#building-the-project)  
 [Configuring Linux Kernel](#configuring-linux-kernel)  
 [Preparing Bootable SD Card](#preparing-bootable-sd-card)  
