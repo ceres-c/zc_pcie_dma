@@ -50,6 +50,13 @@ The project consists from the following files:
 
 For more information about configuration and usage of Xilinx ZC706 evaluation kit [check its user guide](https://www.xilinx.com/support/documentation/boards_and_kits/zc706/ug954-zc706-eval-board-xc7z045-ap-soc.pdf).
 
+## Using the prebuilt image
+If you're very lazy, you can use the prebuilt image that should (TM) just boot. Mind, the onboard ethernet device and USBs do not work as soon as the devicetree that supports the PCIe endpoint is enabled, but I couldn't be bothered to figure out why.
+
+**Download** it here and dd it to your sd card:
+```
+https://drive.google.com/file/d/1-cweiUz5_s_F4wL1eFz-U1EX0QCSVgzo/
+```
 
 ## Building the Project
 
